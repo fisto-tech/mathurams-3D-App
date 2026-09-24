@@ -335,7 +335,7 @@ modelViewer.addEventListener('load', () => {
         }
         // Capture original SS panel color from the GLB on first encounter
         if (ssPanelOriginalColorHex === null &&
-            (matName.includes('ss_pannel') || matName.includes('ss_pannelhead')) && mat.color) {
+          (matName.includes('ss_pannel') || matName.includes('ss_pannelhead')) && mat.color) {
           const r = Math.round(mat.color.r * 255);
           const g = Math.round(mat.color.g * 255);
           const b = Math.round(mat.color.b * 255);
@@ -560,26 +560,26 @@ modelViewer.addEventListener('load', () => {
   // Re-enforce shadow & environment AFTER all sync setup + model-viewer's own
   // first render tick. Apply softness + env-image first, then intensity last
   // (0 → 0.6 is a real change, triggering shadow-catcher recompute on new geometry).
-requestAnimationFrame(() => {
   requestAnimationFrame(() => {
-    modelViewer.setAttribute('shadow-softness', '1');
+    requestAnimationFrame(() => {
+      modelViewer.setAttribute('shadow-softness', '1');
 
-    const lowerCurrent = (currentModelName || '').toLowerCase();
-    const isOverBedAbs = lowerCurrent.includes('over-bed-table') && lowerCurrent.includes('abs') ||
-                          lowerCurrent.includes('overbed') && lowerCurrent.includes('abs');
+      const lowerCurrent = (currentModelName || '').toLowerCase();
+      const isOverBedAbs = lowerCurrent.includes('over-bed-table') && lowerCurrent.includes('abs') ||
+        lowerCurrent.includes('overbed') && lowerCurrent.includes('abs');
 
-    // if (isOverBedAbs) {
-    //   const hdrPath = 'assets/models/view-only-models/over-bed-table/brown_photostudio_02_2k_1.hdr';
-    //   modelViewer.setAttribute('environment-image', hdrPath);
-    //   modelViewer.environmentImage = hdrPath;
-    // } else {
-    //   modelViewer.setAttribute('environment-image', 'legacy');
-    //   modelViewer.environmentImage = 'legacy';
-    // }
+      // if (isOverBedAbs) {
+      //   const hdrPath = 'assets/models/view-only-models/over-bed-table/brown_photostudio_02_2k_1.hdr';
+      //   modelViewer.setAttribute('environment-image', hdrPath);
+      //   modelViewer.environmentImage = hdrPath;
+      // } else {
+      //   modelViewer.setAttribute('environment-image', 'legacy');
+      //   modelViewer.environmentImage = 'legacy';
+      // }
 
-    modelViewer.setAttribute('shadow-intensity', '0.6');
+      modelViewer.setAttribute('shadow-intensity', '0.6');
+    });
   });
-});
 
   // Extra safety frame: model-viewer sometimes needs one more render tick to
   // rebuild the shadow root after toggleMesh visibility changes settle.
@@ -1179,6 +1179,63 @@ function setDefaultConfigForModel(name) {
     };
   }
 
+  // Set default active color swatches depending on model
+  let activeColorHex = '#5BC0EB'; // ICU Cot default
+  if (lower.includes('fowler') && !lower.includes('semi')) {
+    activeColorHex = '#4A4F54'; // Fowler cot
+  } else if (lower.includes('hi-lo') || lower.includes('hi_lo') || lower.includes('hilo')) {
+    activeColorHex = '#50C878'; // Hi-Lo Stretcher
+  } else if (lower.includes('labor')) {
+    activeColorHex = '#6A1B9A'; // Labor cot
+  } else if (lower.includes('semi_fowler') || lower.includes('semi-fowler')) {
+    activeColorHex = '#F57C00'; // Semi Fowler cot
+  } else if (lower.includes('icu')) {
+    activeColorHex = '#5BC0EB'; // ICU cot
+  }
+
+  let activeMattressColorHex = activeColorHex;
+  if (lower.includes('couch') || lower.includes('examination')) {
+    activeMattressColorHex = '#4E342E'; // Deluxe examination couch default mattress color
+  }
+
+  const selectActiveSwatch = (rowId, targetColor) => {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    let found = false;
+    row.querySelectorAll('.color-swatch').forEach(sw => {
+      if (sw.dataset.color && sw.dataset.color.toLowerCase() === targetColor.toLowerCase()) {
+        sw.classList.add('active');
+        found = true;
+      } else {
+        sw.classList.remove('active');
+      }
+    });
+    if (!found) {
+      const first = row.querySelector('.color-swatch[data-color]');
+      if (first) first.classList.add('active');
+    }
+  };
+
+  selectActiveSwatch('abs-panel-color-row', activeColorHex);
+  selectActiveSwatch('abs-rail-color-row', activeColorHex);
+  selectActiveSwatch('mattress-color-row', activeMattressColorHex);
+
+  // For SS Panel, set active swatch to activeColorHex and activate custom color flag if ICU/Fowler
+  const ssRow = document.getElementById('ss-panel-color-row');
+  if (ssRow) {
+    ssRow.querySelectorAll('.color-swatch').forEach(sw => {
+      if (sw.dataset.color && sw.dataset.color.toLowerCase() === activeColorHex.toLowerCase()) {
+        sw.classList.add('active');
+      } else {
+        sw.classList.remove('active');
+      }
+    });
+  }
+
+  if (lower.includes('icu') || lower.includes('fowler') || lower.includes('labor') || lower.includes('hi-lo') || lower.includes('semi')) {
+    userColorsChanged.ssPanel = true;
+  }
+
   document.querySelectorAll('.config-card[data-section="headfoot"]').forEach(card => {
     card.classList.toggle('active', card.dataset.value === defaults.headfoot);
   });
@@ -1397,14 +1454,14 @@ function applyCurrentConfig() {
       const entryMatNames = entry.meshes ? entry.meshes.map(m => Array.isArray(m.material) ? m.material.map(mat => mat.name || '').join(' ') : (m.material?.name || '')).join(' ').toLowerCase() : '';
       const combined = (name + ' ' + entryMatNames).toLowerCase();
 
-      const isColorStorage = combined.includes('cupboard_color') || combined.includes('drawer_color') || combined.includes('drawers_color') || combined.includes('footer_2');
       const isTexturedStorage = combined.includes('drawer_texture') || combined.includes('drawers_texture') || combined.includes('cupboard_texture') || combined.includes('footer_3') || combined.includes('cupboard') || (combined.includes('drawer') && !combined.includes('color') && !combined.includes('mini'));
+      const isColorStorage = !combined.includes('drawers_texture') && !combined.includes('drawer_texture') && (combined.includes('cupboard_color') || combined.includes('drawer_color') || combined.includes('drawers_color') || combined.includes('footer_2'));
       const isMiniDrawer = combined.includes('mini_drawer') || combined.includes('mini-drawer') || combined.includes('mini_cabinent') || combined.includes('mini_cabinet');
 
-      if (isColorStorage) {
-        visible = userColorsChanged.storage;
-      } else if (isTexturedStorage) {
+      if (isTexturedStorage) {
         visible = !userColorsChanged.storage;
+      } else if (isColorStorage) {
+        visible = userColorsChanged.storage;
       } else if (isMiniDrawer) {
         visible = true; // Always visible as part of cabinet
       }
@@ -1620,21 +1677,21 @@ function applyCurrentConfig() {
         const matName = (child.material ? (Array.isArray(child.material) ? child.material.map(m => m.name || '').join(' ') : (child.material.name || '')) : '').toLowerCase();
         const combinedNode = (nodeName + ' ' + matName).toLowerCase();
 
-        const isColorNode = combinedNode.includes('cupboard_color') || combinedNode.includes('drawer_color') || combinedNode.includes('drawers_color') || combinedNode.includes('footer_2');
         const isTexturedNode = combinedNode.includes('drawer_texture') || combinedNode.includes('drawers_texture') || combinedNode.includes('cupboard_texture') || combinedNode.includes('footer_3') || combinedNode.includes('cupboard') || (combinedNode.includes('drawer') && !combinedNode.includes('color') && !combinedNode.includes('mini'));
+        const isColorNode = !combinedNode.includes('drawers_texture') && !combinedNode.includes('drawer_texture') && (combinedNode.includes('cupboard_color') || combinedNode.includes('drawer_color') || combinedNode.includes('drawers_color') || combinedNode.includes('footer_2'));
         const isMiniNode = combinedNode.includes('mini_drawer') || combinedNode.includes('mini-drawer') || combinedNode.includes('mini_cabinent') || combinedNode.includes('mini_cabinet');
 
-        if (isColorNode) {
-          child.visible = userColorsChanged.storage;
-          if (child.material) {
-            if (Array.isArray(child.material)) child.material.forEach(m => m.visible = userColorsChanged.storage);
-            else child.material.visible = userColorsChanged.storage;
-          }
-        } else if (isTexturedNode) {
+        if (isTexturedNode) {
           child.visible = !userColorsChanged.storage;
           if (child.material) {
             if (Array.isArray(child.material)) child.material.forEach(m => m.visible = !userColorsChanged.storage);
             else child.material.visible = !userColorsChanged.storage;
+          }
+        } else if (isColorNode) {
+          child.visible = userColorsChanged.storage;
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach(m => m.visible = userColorsChanged.storage);
+            else child.material.visible = userColorsChanged.storage;
           }
         } else if (isMiniNode || combinedNode.includes('footer_1') || combinedNode.includes('footer')) {
           child.visible = true;

@@ -1789,3 +1789,61 @@ body {
     font-size: 12px;
   }
 }
+
+transition: all 0.3s ease;
+}
+
+.bottom-variant-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94A3B8;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bottom-variant-btn:hover {
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.bottom-variant-btn.active {
+  background: #EA580C;
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.4);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.bottom-variant-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+@media (max-width: 640px) {
+  #bottom-variant-selector {
+    bottom: 16px;
+    max-width: 95vw;
+  }
+
+  .bottom-variant-bar {
+    padding: 4px 6px;
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .bottom-variant-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
