@@ -80,13 +80,54 @@ const bgColors = ['#424357', '#FFFFFF', '#F8FAFC', '#E2E8F0', '#F1F5F9'];
 let bgIndex = 0;
 let wireframeMode = false;
 
+// == Model Cache System =======================================================
+const MODEL_CACHE_NAME = 'mathurams-3d-models-v1';
+const modelBlobUrlCache = new Map();
+
+async function getCachedModelUrl(fileOrUrl) {
+  if (typeof fileOrUrl !== 'string') {
+    return URL.createObjectURL(fileOrUrl);
+  }
+  const url = fileOrUrl;
+  if (modelBlobUrlCache.has(url)) {
+    return modelBlobUrlCache.get(url);
+  }
+
+  if ('caches' in window) {
+    try {
+      const cache = await caches.open(MODEL_CACHE_NAME);
+      let response = await cache.match(url);
+      if (!response) {
+        // Fetch and cache
+        response = await fetch(url);
+        if (response.ok) {
+          cache.put(url, response.clone()).catch(err => console.warn('Cache put error:', err));
+        }
+      }
+      if (response && response.ok) {
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        modelBlobUrlCache.set(url, blobUrl);
+        return blobUrl;
+      }
+    } catch (e) {
+      console.warn('Cache API lookup failed, falling back to direct URL:', e);
+    }
+  }
+
+  return url;
+}
+
 // == Load Model ===============================================================
-function loadModel(fileOrUrl, fileName) {
+async function loadModel(fileOrUrl, fileName) {
   const isUrl = typeof fileOrUrl === 'string';
-  const url = isUrl ? fileOrUrl : URL.createObjectURL(fileOrUrl);
+  const rawUrl = isUrl ? fileOrUrl : '';
   const name = isUrl ? (fileName || fileOrUrl.split('/').pop()) : fileOrUrl.name;
   currentModelName = name;
-  currentModelUrl = isUrl ? fileOrUrl : '';
+  currentModelUrl = rawUrl;
+
+  // Resolve cached model URL (instant loading if cached)
+  const resolvedUrl = await getCachedModelUrl(fileOrUrl);
 
   // Dynamically update product name based on loaded model
   const lowerName = name.toLowerCase();
@@ -128,11 +169,10 @@ function loadModel(fileOrUrl, fileName) {
   // Show the "Back to Product" button now that a model is open
   setBackBtnVisible(true);
 
-
   // Classify model type (View-only vs Customisation)
   const isAttenderModel = name.toLowerCase().includes('attender');
   const isLockerModel = name.toLowerCase().includes('locker') || name.toLowerCase().includes('sidelocker');
-  const isViewOnly = url.toLowerCase().includes('view-only-models') ||
+  const isViewOnly = (rawUrl && rawUrl.toLowerCase().includes('view-only-models')) ||
     name.toLowerCase().includes('over-bed-table') ||
     name.toLowerCase().includes('semi-fowler-cot') ||
     isAttenderModel || isLockerModel;
@@ -191,8 +231,15 @@ function loadModel(fileOrUrl, fileName) {
   modelViewer.cameraOrbit = modelInitialOrbit;
   modelViewer.cameraTarget = modelInitialTarget;
   modelViewer.fieldOfView = modelInitialFov;
-  modelViewer.setAttribute('shadow-intensity', '0.6');
-  modelViewer.setAttribute('shadow-softness', '1');
+
+  // Plain Attender Cot uses custom shadow values; all other models use defaults
+  if (modelKey === 'attender-cot') {
+    modelViewer.setAttribute('shadow-intensity', '0.47');
+    modelViewer.setAttribute('shadow-softness', '0.06');
+  } else {
+    modelViewer.setAttribute('shadow-intensity', '0.6');
+    modelViewer.setAttribute('shadow-softness', '1');
+  }
 
   // Reset panning state on load
   const panModelToggle = document.getElementById('pan-model-toggle-cb');
@@ -201,18 +248,6 @@ function loadModel(fileOrUrl, fileName) {
   }
   modelViewer.setAttribute('disable-pan', '');
   modelViewer.disablePan = true;
-
-  // Set model-specific exposure & environment image (legacy environment produces soft leg contact shadows)
-  // Both attribute + JS property must be set BEFORE src so model-viewer picks them up on load
-  // if (modelKey === 'over-bed-table' && lowerName2.includes('abs')) {
-  //   // Over Bed Table ABS only — use dedicated HDR environment
-  //   const hdrPath = 'assets/models/view-only-models/over-bed-table/brown_photostudio_02_2k_1.hdr';
-  //   modelViewer.setAttribute('environment-image', hdrPath);
-  //   modelViewer.environmentImage = hdrPath;
-  // } else {
-  //   modelViewer.setAttribute('environment-image', 'legacy');
-  //   modelViewer.environmentImage = 'legacy';
-  // }
 
   if (modelKey === 'bedside-locker-deluxe') {
     modelViewer.exposure = 0.75;
@@ -238,8 +273,8 @@ function loadModel(fileOrUrl, fileName) {
   // against the new model's bounding box.
   modelViewer.setAttribute('shadow-intensity', '0');
 
-  // Assign source to Google's model-viewer
-  modelViewer.src = url;
+  // Assign resolved cached source to Google's model-viewer
+  modelViewer.src = resolvedUrl;
 }
 
 // == Listen to model-viewer load event =========================================
@@ -559,32 +594,31 @@ modelViewer.addEventListener('load', () => {
 
   // Re-enforce shadow & environment AFTER all sync setup + model-viewer's own
   // first render tick. Apply softness + env-image first, then intensity last
-  // (0 → 0.6 is a real change, triggering shadow-catcher recompute on new geometry).
+  // (0 → correct value is a real change, triggering shadow-catcher recompute on new geometry).
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      modelViewer.setAttribute('shadow-softness', '1');
-
       const lowerCurrent = (currentModelName || '').toLowerCase();
-      const isOverBedAbs = lowerCurrent.includes('over-bed-table') && lowerCurrent.includes('abs') ||
-        lowerCurrent.includes('overbed') && lowerCurrent.includes('abs');
+      const isPlainAttender = lowerCurrent.includes('attender') &&
+        !lowerCurrent.includes('deluxe') && !lowerCurrent.includes('door');
 
-      // if (isOverBedAbs) {
-      //   const hdrPath = 'assets/models/view-only-models/over-bed-table/brown_photostudio_02_2k_1.hdr';
-      //   modelViewer.setAttribute('environment-image', hdrPath);
-      //   modelViewer.environmentImage = hdrPath;
-      // } else {
-      //   modelViewer.setAttribute('environment-image', 'legacy');
-      //   modelViewer.environmentImage = 'legacy';
-      // }
-
-      modelViewer.setAttribute('shadow-intensity', '0.6');
+      if (isPlainAttender) {
+        modelViewer.setAttribute('shadow-softness', '0.06');
+        modelViewer.setAttribute('shadow-intensity', '0.47');
+      } else {
+        modelViewer.setAttribute('shadow-softness', '1');
+        modelViewer.setAttribute('shadow-intensity', '0.6');
+      }
     });
   });
 
   // Extra safety frame: model-viewer sometimes needs one more render tick to
   // rebuild the shadow root after toggleMesh visibility changes settle.
   setTimeout(() => {
-    modelViewer.setAttribute('shadow-intensity', '0.6');
+    const lowerCurrent2 = (currentModelName || '').toLowerCase();
+    const isPlainAttender2 = lowerCurrent2.includes('attender') &&
+      !lowerCurrent2.includes('deluxe') && !lowerCurrent2.includes('door');
+
+    modelViewer.setAttribute('shadow-intensity', isPlainAttender2 ? '0.71' : '0.6');
   }, 50);
 });
 
@@ -927,15 +961,19 @@ function focusMesh(key, itemEl, forceSelect = false) {
   const centre = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
 
-  // Set camera target in model-viewer
-  modelViewer.cameraTarget = `${centre.x}m ${centre.y}m ${centre.z}m`;
-
-  const maxSz = Math.max(size.x, size.y, size.z);
-  if (isFinite(maxSz) && maxSz > 0) {
-    // Dynamically adjust model-viewer orbit radius/zoom level
-    const zoomRadius = maxSz * 2.2;
-    modelViewer.cameraOrbit = `0deg 75deg ${zoomRadius}m`;
+  if (modelInitialTarget && modelInitialTarget !== 'unset') {
+    modelViewer.cameraTarget = modelInitialTarget;
   }
+}
+
+function resetCameraToNormal() {
+  const targetToSet = (modelInitialTarget && modelInitialTarget !== 'unset') ? modelInitialTarget : 'auto';
+  const orbitToSet = (modelInitialOrbit && modelInitialOrbit !== 'unset') ? modelInitialOrbit : 'auto auto auto';
+  const fovToSet = modelInitialFov || 'auto';
+
+  modelViewer.cameraTarget = targetToSet;
+  modelViewer.cameraOrbit = orbitToSet;
+  modelViewer.fieldOfView = fovToSet;
 }
 
 // == Focus camera on a category section =========================================
@@ -960,7 +998,15 @@ function focusSection(section) {
     const entry = meshMap[key];
     if (!entry.visible) return;
 
-    const name = entry.name.toLowerCase();
+    const entryMatNames = entry.meshes
+      ? entry.meshes.map(m => {
+        if (Array.isArray(m.material)) {
+          return m.material.map(mat => mat ? (mat.name || '') : '').join(' ');
+        }
+        return m.material ? (m.material.name || '') : '';
+      }).join(' ')
+      : '';
+    const name = (entry.name + ' ' + entryMatNames).toLowerCase();
     let match = false;
 
     if (section === 'headfoot') {
@@ -972,7 +1018,7 @@ function focusSection(section) {
         match = true;
       }
     } else if (section === 'wheel') {
-      if (name.includes('wheel') || name.includes('castor') || name.includes('caster') || name === 'bush' || name === 'bush_1' || name === 'bush_2') {
+      if (name.includes('wheel') || name.includes('castor') || name.includes('caster') || name.includes('bush')) {
         match = true;
       }
     } else if (section === 'operation') {
@@ -991,7 +1037,7 @@ function focusSection(section) {
         match = true;
       }
     } else if (section === 'cabinet' || section === 'drawer' || section === 'storage') {
-      if (name.includes('drawer') || name.includes('cupboard') || name === 'cabinent_1' || name === 'mini_cabinent' || name === 'cabinent') {
+      if (name.includes('drawer') || name.includes('cupboard') || name.includes('cabinent') || name.includes('cabinet')) {
         match = true;
       }
     } else if (section === 'footer') {
@@ -1004,24 +1050,6 @@ function focusSection(section) {
       matchingMeshes.push(...entry.meshes);
     }
   });
-
-  if (section === 'operation' && matchingMeshes.length === 0) {
-    const isRemoteActive = document.querySelector('input[name="operation"]:checked')?.value === 'remote';
-    Object.keys(meshMap).forEach(key => {
-      const entry = meshMap[key];
-      if (!entry.visible) return;
-      const name = entry.name.toLowerCase();
-      if (isRemoteActive) {
-        if (name.includes('motor') || name.includes('actuator') || name.includes('linear') || name.includes('remote') || name.includes('handset')) {
-          matchingMeshes.push(...entry.meshes);
-        }
-      } else {
-        if (name.includes('crank') || name.includes('manual') || name.includes('handle')) {
-          matchingMeshes.push(...entry.meshes);
-        }
-      }
-    });
-  }
 
   if (matchingMeshes.length === 0) {
     if (isAutoRotateActive) modelViewer.autoRotate = true;
@@ -1048,14 +1076,14 @@ function focusSection(section) {
     theta = '0deg';
     phi = '75deg';
   } else if (section === 'siderails') {
-    theta = '90deg';
+    theta = '60deg';
     phi = '75deg';
   } else if (section === 'wheel') {
     theta = '45deg';
     phi = '85deg';
   } else if (section === 'operation') {
-    theta = '135deg';
-    phi = '70deg';
+    theta = '45deg';
+    phi = '75deg';
   } else if (section === 'cabinet' || section === 'drawer') {
     theta = '45deg';
     phi = '70deg';
@@ -1065,29 +1093,27 @@ function focusSection(section) {
   if (isFinite(maxSz) && maxSz > 0) {
     const zoomRadius = maxSz * 2.0;
 
-    // Zoom in on target
+    // Zoom camera in on the selected part
     modelViewer.fieldOfView = 'auto';
     modelViewer.cameraTarget = `${centre.x}m ${centre.y}m ${centre.z}m`;
     modelViewer.cameraOrbit = `${theta} ${phi} ${zoomRadius}m`;
 
-    // Blink highlight meshes in this section
+    // Blink highlight meshes in this section for visual feedback
     matchingMeshes.forEach(mesh => {
       blinkMesh(mesh);
     });
 
-    // 2. After 2 seconds, reset camera back to original position
+    // Reset camera back to normal initial position after 2.5 seconds
     resetCameraTimeout = setTimeout(() => {
-      modelViewer.cameraOrbit = modelInitialOrbit;
-      modelViewer.cameraTarget = modelInitialTarget;
-      modelViewer.fieldOfView = modelInitialFov;
-    }, 2000);
+      resetCameraToNormal();
+    }, 2500);
 
-    // 3. After 4.5 seconds, restore auto-rotation if it was active
+    // Restore auto-rotation after 4 seconds if enabled
     autoRotateTimeout = setTimeout(() => {
       if (isAutoRotateActive && cb && cb.checked) {
         modelViewer.autoRotate = true;
       }
-    }, 4500);
+    }, 4000);
   }
 }
 
@@ -1333,7 +1359,15 @@ function applyCurrentConfig() {
 
   Object.keys(meshMap).forEach(key => {
     const entry = meshMap[key];
-    const name = entry.name.toLowerCase();
+    const entryMatNames = entry.meshes
+      ? entry.meshes.map(m => {
+        if (Array.isArray(m.material)) {
+          return m.material.map(mat => mat ? (mat.name || '') : '').join(' ');
+        }
+        return m.material ? (m.material.name || '') : '';
+      }).join(' ')
+      : '';
+    const name = (entry.name + ' ' + entryMatNames).toLowerCase();
     let visible = true;
 
     // Head / Foot panels matching
@@ -1361,7 +1395,7 @@ function applyCurrentConfig() {
 
     // Side Rails matching
     const isRailMesh = name.includes('rail') || name.includes('side') || name.includes('collapsible') || name.includes('colapsable') || name.includes('ac-') || name.includes('ac_') || name.includes('pipe') || name.includes('siderailing') || name.includes('bush_basesider') || name.includes('bush_siderail');
-    if (isRailMesh) {
+    if (isRailMesh && !isLaborCot && !isHiLo) {
       const isAbs2Rail = name.includes('siderailing2') || name.includes('siderailing_2') || name.includes('abs2');
       const isAbs1Rail = name.includes('abs') && !isAbs2Rail;
       const isAlum = (name.includes('aluminium') || name.includes('ac_') || name.includes('ac-') || name.startsWith('ac ') || name === 'ac_siderailings');
@@ -1449,6 +1483,17 @@ function applyCurrentConfig() {
       }
     }
 
+    // ICU Cot bush_siderail & bumper_bush / bumper_base visibility rules
+    const isIcuCot = (currentModelName && currentModelName.toLowerCase().includes('icu')) || productName === 'ICU Cot';
+    if (isIcuCot) {
+      if (name.includes('bush_siderail') || name.includes('logo_back')) {
+        visible = (headfoot === 'ms' || headfoot === 'ss');
+      }
+      if (name.includes('bumper_bush') || name.includes('bumper_base') || name.includes('bumper_push') || (name.includes('bumper') && (name.includes('bush') || name.includes('base') || name.includes('push')))) {
+        visible = (headfoot === 'abs' || headfoot === 'abs1' || headfoot === 'abs2');
+      }
+    }
+
     // Deluxe Examination Couch storage (cupboard, drawers & footer) textured vs color mesh toggle logic
     if (isCouch) {
       const entryMatNames = entry.meshes ? entry.meshes.map(m => Array.isArray(m.material) ? m.material.map(mat => mat.name || '').join(' ') : (m.material?.name || '')).join(' ').toLowerCase() : '';
@@ -1467,14 +1512,38 @@ function applyCurrentConfig() {
       }
     }
 
-    // Operation matching
-    if (isHiLo && (name.includes('adjustment') || name.includes('rod') || name.includes('crank'))) {
-      visible = true;
-    } else if (!isHiLo && (name.includes('motor') || name.includes('remote') || name.includes('crank') || (name.includes('manual') && !name.includes('manual_rod')) || name.includes('handle') || name.includes('cable') || name.includes('wire') || name.includes('adjustment'))) {
+    // Operation matching (Manual vs Remote electric motors & components)
+    const isElectricMotorOrRemote =
+      name.includes('motor') ||
+      name.includes('actuator') ||
+      name.includes('linear') ||
+      name.includes('remote') ||
+      name.includes('handset') ||
+      name.includes('cradle') ||
+      name.includes('cable') ||
+      name.includes('wire') ||
+      name.includes('control_box') ||
+      name.includes('power_box') ||
+      name.includes('battery');
+
+    const isManualCrankOrHandle =
+      name.includes('crank') ||
+      name.includes('manual') ||
+      name.includes('handle') ||
+      (!isHiLo && (name.includes('cot_5') || name.includes('cot_4'))) ||
+      (name.includes('adjustment') && !isHiLo);
+
+    if (isHiLo) {
+      if (name.includes('stand') || name.includes('base_cot') || name.includes('ms_pipe') || name.includes('adjustment') || name.includes('rod') || name.includes('crank')) {
+        visible = true;
+      }
+    } else if (isElectricMotorOrRemote || isManualCrankOrHandle) {
       if (operation === 'manual') {
-        if (name.includes('motor') || name.includes('remote') || name.includes('cable') || name.includes('wire')) visible = false;
+        if (isElectricMotorOrRemote) visible = false;
+        if (isManualCrankOrHandle) visible = true;
       } else if (operation === 'remote') {
-        if (name.includes('crank') || (name.includes('manual') && !name.includes('manual_rod')) || name.includes('handle') || name.includes('adjustment')) visible = false;
+        if (isElectricMotorOrRemote) visible = true;
+        if (isManualCrankOrHandle) visible = false;
       }
     }
 
@@ -2362,9 +2431,7 @@ document.querySelectorAll('.ss-panel-color').forEach(swatch => {
 
 // == HUD ======================================================================
 document.getElementById('reset-cam-btn').addEventListener('click', () => {
-  modelViewer.cameraOrbit = modelInitialOrbit;
-  modelViewer.cameraTarget = modelInitialTarget;
-  modelViewer.fieldOfView = modelInitialFov;
+  resetCameraToNormal();
   showToast('Camera reset');
 });
 
@@ -2763,9 +2830,48 @@ function showToast(msg) {
 
 // == Navigation & Routing Logic ===============================================
 const backBtn = document.getElementById('back-btn');
+
+function isFullscreenActive() {
+  const canvasWrapEl = document.getElementById('canvas-wrap');
+  return !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement ||
+    (canvasWrapEl && canvasWrapEl.classList.contains('fullscreen-mode'))
+  );
+}
+
+function exitFullscreenMode() {
+  const canvasWrapEl = document.getElementById('canvas-wrap');
+  const fullscreenBtn = document.getElementById('fullscreen-btn');
+  if (document.exitFullscreen) {
+    document.exitFullscreen().catch(() => { });
+  } else if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+  } else if (document.mozCancelFullScreen) {
+    document.mozCancelFullScreen();
+  } else if (document.msExitFullscreen) {
+    document.msExitFullscreen();
+  }
+  if (canvasWrapEl) {
+    canvasWrapEl.classList.remove('fullscreen-mode');
+  }
+  if (fullscreenBtn) {
+    fullscreenBtn.classList.remove('active');
+  }
+}
+
 if (backBtn) {
   backBtn.removeAttribute('onclick');
-  backBtn.addEventListener('click', () => {
+  backBtn.addEventListener('click', (e) => {
+    // If currently in fullscreen mode, exit fullscreen mode first instead of going to homescreen
+    if (isFullscreenActive()) {
+      e.preventDefault();
+      e.stopPropagation();
+      exitFullscreenMode();
+      return;
+    }
     // Navigate back to homescreen (products section)
     const base = window.location.href.split('#')[0].split('?')[0];
     window.location.href = base;
@@ -2856,6 +2962,13 @@ window.addEventListener('hashchange', () => {
   window.location.reload();
 });
 
+// Handle mobile device back gesture (popstate) while in fullscreen
+window.addEventListener('popstate', () => {
+  if (isFullscreenActive()) {
+    exitFullscreenMode();
+  }
+});
+
 // == Auto Rotate Toggle Checkbox Listener =====================================
 const autoRotateToggle = document.getElementById('auto-rotate-toggle-cb');
 if (autoRotateToggle) {
@@ -2900,20 +3013,32 @@ const canvasWrapEl = document.getElementById('canvas-wrap');
 
 if (fullscreenBtn && canvasWrapEl) {
   fullscreenBtn.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      canvasWrapEl.requestFullscreen().catch(err => {
-        console.error(`Error entering fullscreen: ${err.message}`);
-        showToast('Fullscreen not supported');
-      });
+    if (!isFullscreenActive()) {
+      const req = canvasWrapEl.requestFullscreen || canvasWrapEl.webkitRequestFullscreen || canvasWrapEl.mozRequestFullScreen || canvasWrapEl.msRequestFullscreen;
+      if (req) {
+        req.call(canvasWrapEl).then(() => {
+          try {
+            history.pushState({ fullscreen: true }, '');
+          } catch (e) { }
+        }).catch(err => {
+          console.error(`Error entering fullscreen: ${err.message}`);
+          showToast('Fullscreen not supported');
+        });
+      }
     } else {
-      document.exitFullscreen();
+      exitFullscreenMode();
     }
   });
 
-  document.addEventListener('fullscreenchange', () => {
-    const isFS = !!document.fullscreenElement;
+  const handleFSChange = () => {
+    const isFS = isFullscreenActive();
     fullscreenBtn.classList.toggle('active', isFS);
     canvasWrapEl.classList.toggle('fullscreen-mode', isFS);
-  });
+  };
+
+  document.addEventListener('fullscreenchange', handleFSChange);
+  document.addEventListener('webkitfullscreenchange', handleFSChange);
+  document.addEventListener('mozfullscreenchange', handleFSChange);
+  document.addEventListener('MSFullscreenChange', handleFSChange);
 }
 

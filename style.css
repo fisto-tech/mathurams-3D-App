@@ -1182,7 +1182,8 @@ body {
 
 @media screen and (max-width: 500px) {
   #toast {
-    width: 65%;
+    width: fit-content;
+    max-width: calc(100vw - 32px);
     text-align: center;
     font-size: 12.5px;
   }
@@ -1200,6 +1201,9 @@ body {
   border-radius: var(--radius);
   font-size: 14px;
   font-weight: 500;
+  width: fit-content;
+  max-width: calc(100vw - 32px);
+  white-space: nowrap;
   transition: transform 300ms ease;
   z-index: 200;
   pointer-events: none;
@@ -1247,6 +1251,11 @@ body {
     overflow: hidden;
   }
 
+  #app.view-only {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: var(--topbar-h) 1fr !important;
+  }
+
   #sidebar-config {
     grid-row: 3;
     grid-column: 1 !important;
@@ -1258,9 +1267,20 @@ body {
     padding: 16px 16px 40px 16px;
   }
 
+  #app.view-only #sidebar-config {
+    display: none !important;
+  }
+
   #canvas-wrap {
     grid-row: 2;
     grid-column: 1 !important;
+  }
+
+  #app.view-only #canvas-wrap {
+    grid-row: 2 !important;
+    grid-column: 1 !important;
+    height: 100% !important;
+    width: 100% !important;
   }
 
   .config-section {
@@ -1601,6 +1621,27 @@ body {
   grid-template-rows: var(--topbar-h) 1fr !important;
 }
 
+#app.homescreen-active #topbar {
+  position: relative;
+  justify-content: center;
+}
+
+#app.homescreen-active #product-title {
+  display: none !important;
+}
+
+#app.homescreen-active .header-left {
+  position: absolute;
+  left: 16px;
+}
+
+#app.homescreen-active .header-right {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
 #app.homescreen-active #sidebar-config,
 #app.homescreen-active #canvas-wrap {
   display: none !important;
@@ -1671,6 +1712,19 @@ body {
 
   .product-card p {
     font-size: 11px;
+  }
+
+  #toast,
+  .tooltip,
+  .tooltip-content,
+  .tooltip-text,
+  [data-tooltip]::after,
+  [data-tooltip]::before,
+  .custom-tooltip,
+  .annotation,
+  .hotspot-annotation {
+    width: fit-content !important;
+    max-width: calc(100vw - 32px) !important;
   }
 }
 
@@ -1790,8 +1844,6 @@ body {
   }
 }
 
-transition: all 0.3s ease;
-}
 
 .bottom-variant-btn {
   display: flex;
