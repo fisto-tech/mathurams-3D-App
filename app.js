@@ -232,14 +232,9 @@ async function loadModel(fileOrUrl, fileName) {
   modelViewer.cameraTarget = modelInitialTarget;
   modelViewer.fieldOfView = modelInitialFov;
 
-  // Plain Attender Cot uses custom shadow values; all other models use defaults
-  if (modelKey === 'attender-cot') {
-    modelViewer.setAttribute('shadow-intensity', '0.47');
-    modelViewer.setAttribute('shadow-softness', '0.06');
-  } else {
-    modelViewer.setAttribute('shadow-intensity', '0.6');
-    modelViewer.setAttribute('shadow-softness', '1');
-  }
+  // All models consistently use smooth shadow values
+  modelViewer.setAttribute('shadow-intensity', '0.6');
+  modelViewer.setAttribute('shadow-softness', '1');
 
   // Reset panning state on load
   const panModelToggle = document.getElementById('pan-model-toggle-cb');
@@ -592,34 +587,13 @@ modelViewer.addEventListener('load', () => {
   const sidebarEl = document.getElementById('sidebar-config');
   if (sidebarEl) sidebarEl.classList.remove('loading');
 
-  // Re-enforce shadow & environment AFTER all sync setup + model-viewer's own
-  // first render tick. Apply softness + env-image first, then intensity last
-  // (0 → correct value is a real change, triggering shadow-catcher recompute on new geometry).
+  // Re-enforce shadow & environment AFTER all sync setup + model-viewer's own first render tick.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      const lowerCurrent = (currentModelName || '').toLowerCase();
-      const isPlainAttender = lowerCurrent.includes('attender') &&
-        !lowerCurrent.includes('deluxe') && !lowerCurrent.includes('door');
-
-      if (isPlainAttender) {
-        modelViewer.setAttribute('shadow-softness', '0.06');
-        modelViewer.setAttribute('shadow-intensity', '0.47');
-      } else {
-        modelViewer.setAttribute('shadow-softness', '1');
-        modelViewer.setAttribute('shadow-intensity', '0.6');
-      }
+      modelViewer.setAttribute('shadow-softness', '1');
+      modelViewer.setAttribute('shadow-intensity', '0.6');
     });
   });
-
-  // Extra safety frame: model-viewer sometimes needs one more render tick to
-  // rebuild the shadow root after toggleMesh visibility changes settle.
-  setTimeout(() => {
-    const lowerCurrent2 = (currentModelName || '').toLowerCase();
-    const isPlainAttender2 = lowerCurrent2.includes('attender') &&
-      !lowerCurrent2.includes('deluxe') && !lowerCurrent2.includes('door');
-
-    modelViewer.setAttribute('shadow-intensity', isPlainAttender2 ? '0.71' : '0.6');
-  }, 50);
 });
 
 // == Bottom Floating Variant Selector (for Attender Cot & Bedside Locker) ========
