@@ -604,7 +604,7 @@ function renderBottomVariantSelector() {
   const isAttender = productName.includes('Attender Cot') || productName.includes('Attender') || (currentModelName && currentModelName.toLowerCase().includes('attender'));
   const isLocker = productName.includes('Locker') || productName.includes('Sidelocker') || (currentModelName && (currentModelName.toLowerCase().includes('locker') || currentModelName.toLowerCase().includes('sidelocker')));
   const isOverBed = productName.includes('Over Bed') || productName.includes('Overbed') || (currentModelName && (currentModelName.toLowerCase().includes('over-bed') || currentModelName.toLowerCase().includes('overbed')));
-
+ 
   if (!isAttender && !isLocker && !isOverBed) {
     bottomSelector.style.display = 'none';
     bottomSelector.innerHTML = '';
@@ -1046,6 +1046,8 @@ function focusSection(section) {
   let theta = '45deg';
   let phi = '75deg';
 
+  const isRemoteActive = (section === 'operation') && (document.querySelector('input[name="operation"]:checked')?.value === 'remote');
+
   if (section === 'headfoot') {
     theta = '0deg';
     phi = '75deg';
@@ -1056,38 +1058,73 @@ function focusSection(section) {
     theta = '45deg';
     phi = '85deg';
   } else if (section === 'operation') {
-    theta = '45deg';
-    phi = '75deg';
+    if (isRemoteActive) {
+      // Angle viewing the right side remote handset
+      theta = '120deg';
+      phi = '70deg';
+    } else {
+      theta = '45deg';
+      phi = '75deg';
+    }
   } else if (section === 'cabinet' || section === 'drawer') {
     theta = '45deg';
     phi = '70deg';
   }
 
-  const maxSz = Math.max(size.x, size.y, size.z);
-  if (isFinite(maxSz) && maxSz > 0) {
-    const zoomRadius = maxSz * 2.0;
-
-    // Zoom camera in on the selected part
-    modelViewer.fieldOfView = 'auto';
-    modelViewer.cameraTarget = `${centre.x}m ${centre.y}m ${centre.z}m`;
-    modelViewer.cameraOrbit = `${theta} ${phi} ${zoomRadius}m`;
-
-    // Blink highlight meshes in this section for visual feedback
-    matchingMeshes.forEach(mesh => {
-      blinkMesh(mesh);
+  // If remote is selected, calculate target box strictly around the remote handset meshes if available
+  let targetBox = box;
+  if (isRemoteActive) {
+    const remoteOnlyMeshes = matchingMeshes.filter(m => {
+      const mName = (m.name || '').toLowerCase();
+      const parentName = (m.parent?.name || '').toLowerCase();
+      return mName.includes('remote') || mName.includes('handset') || parentName.includes('remote') || parentName.includes('handset');
     });
+    if (remoteOnlyMeshes.length > 0) {
+      const rBox = new THREE.Box3();
+      remoteOnlyMeshes.forEach(m => rBox.expandByObject(m));
+      if (!rBox.isEmpty()) {
+        targetBox = rBox;
+      }
+    }
+  }
 
-    // Reset camera back to normal initial position after 2.5 seconds
-    resetCameraTimeout = setTimeout(() => {
-      resetCameraToNormal();
-    }, 2500);
+  const targetCentre = targetBox.getCenter(new THREE.Vector3());
+  const targetSize = targetBox.getSize(new THREE.Vector3());
 
-    // Restore auto-rotation after 4 seconds if enabled
-    autoRotateTimeout = setTimeout(() => {
+  const maxSz = Math.max(targetSize.x, targetSize.y, targetSize.z);
+  if (isFinite(maxSz) && maxSz > 0) {
+    const isManualRemoteOp = (section === 'operation');
+    const prodLower = (productName || '').toLowerCase();
+    const isIcuFowlerLabor = prodLower.includes('icu') || prodLower.includes('fowler') || prodLower.includes('labor');
+
+    // Zoom camera in only during manual remote operations for ICU, Fowler, and Labor cots
+    if (isManualRemoteOp && isIcuFowlerLabor) {
+      const zoomRadius = isRemoteActive ? Math.max(maxSz * 2.5, 0.6) : maxSz * 2.0;
+      modelViewer.fieldOfView = 'auto';
+      modelViewer.cameraTarget = `${targetCentre.x}m ${targetCentre.y}m ${targetCentre.z}m`;
+      modelViewer.cameraOrbit = `${theta} ${phi} ${zoomRadius}m`;
+
+      // Reset camera back to normal initial position after 2.5 seconds
+      resetCameraTimeout = setTimeout(() => {
+        resetCameraToNormal();
+      }, 2500);
+
+      // Restore auto-rotation after 4 seconds if enabled
+      autoRotateTimeout = setTimeout(() => {
+        if (isAutoRotateActive && cb && cb.checked) {
+          modelViewer.autoRotate = true;
+        }
+      }, 4000);
+    } else {
       if (isAutoRotateActive && cb && cb.checked) {
         modelViewer.autoRotate = true;
       }
-    }, 4000);
+    }
+
+    // Always blink highlight meshes in this section for visual feedback
+    matchingMeshes.forEach(mesh => {
+      blinkMesh(mesh);
+    });
   }
 }
 
