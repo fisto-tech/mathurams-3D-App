@@ -1121,7 +1121,46 @@
   }
 </script>
   <script type="module" src="app.js?v=20260915_shadow_zero"></script>
+<script>
 
+  document.addEventListener('DOMContentLoaded', function () {
+
+    if (
+
+      window.Capacitor &&
+
+      window.Capacitor.Plugins &&
+
+      window.Capacitor.Plugins.App
+
+    ) {
+
+      window.Capacitor.Plugins.App.addListener(
+
+        'backButton',
+
+        function (event) {
+
+          if (event.canGoBack) {
+
+            window.history.back();
+
+          } else {
+
+            window.Capacitor.Plugins.App.exitApp();
+
+          }
+
+        }
+
+      );
+
+    }
+
+  });
+</script>
+
+ 
 </body>
 
 </html>

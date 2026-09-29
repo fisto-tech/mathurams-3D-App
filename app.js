@@ -604,7 +604,7 @@ function renderBottomVariantSelector() {
   const isAttender = productName.includes('Attender Cot') || productName.includes('Attender') || (currentModelName && currentModelName.toLowerCase().includes('attender'));
   const isLocker = productName.includes('Locker') || productName.includes('Sidelocker') || (currentModelName && (currentModelName.toLowerCase().includes('locker') || currentModelName.toLowerCase().includes('sidelocker')));
   const isOverBed = productName.includes('Over Bed') || productName.includes('Overbed') || (currentModelName && (currentModelName.toLowerCase().includes('over-bed') || currentModelName.toLowerCase().includes('overbed')));
- 
+
   if (!isAttender && !isLocker && !isOverBed) {
     bottomSelector.style.display = 'none';
     bottomSelector.innerHTML = '';
@@ -954,18 +954,6 @@ function resetCameraToNormal() {
 function focusSection(section) {
   if (isCurrentModelViewOnly) return;
 
-  // 1. Temporarily pause auto-rotate
-  const cb = document.getElementById('auto-rotate-toggle-cb');
-  const isAutoRotateActive = cb ? cb.checked : modelViewer.autoRotate;
-
-  if (isAutoRotateActive) {
-    modelViewer.autoRotate = false;
-  }
-
-  // Clear any existing timeouts to prevent overlapping animations
-  clearTimeout(autoRotateTimeout);
-  clearTimeout(resetCameraTimeout);
-
   const matchingMeshes = [];
 
   Object.keys(meshMap).forEach(key => {
@@ -980,7 +968,9 @@ function focusSection(section) {
         return m.material ? (m.material.name || '') : '';
       }).join(' ')
       : '';
-    const name = (entry.name + ' ' + entryMatNames).toLowerCase();
+    const parentNames = entry.meshes ? entry.meshes.map(m => m.parent ? (m.parent.name || '') : '').join(' ') : '';
+    const meshSelfNames = entry.meshes ? entry.meshes.map(m => m.name || '').join(' ') : '';
+    const name = (entry.name + ' ' + entryMatNames + ' ' + parentNames + ' ' + meshSelfNames).toLowerCase();
     let match = false;
 
     if (section === 'headfoot') {
@@ -998,7 +988,7 @@ function focusSection(section) {
     } else if (section === 'operation') {
       const isRemoteActive = document.querySelector('input[name="operation"]:checked')?.value === 'remote';
       if (isRemoteActive) {
-        if (name.includes('remote') || name.includes('handset') || name.includes('remote_cradle') || name.includes('motor') || name.includes('actuator') || name.includes('linear')) {
+        if (name.includes('remote') || name.includes('handset') || name.includes('remote_cradle') || name.includes('cradle')) {
           match = true;
         }
       } else {
@@ -1025,107 +1015,25 @@ function focusSection(section) {
     }
   });
 
-  if (matchingMeshes.length === 0) {
-    if (isAutoRotateActive) modelViewer.autoRotate = true;
-    return;
-  }
-
-  const box = new THREE.Box3();
-  matchingMeshes.forEach(mesh => {
-    box.expandByObject(mesh);
-  });
-
-  if (box.isEmpty()) {
-    if (isAutoRotateActive) modelViewer.autoRotate = true;
-    return;
-  }
-
-  const centre = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-
-  let theta = '45deg';
-  let phi = '75deg';
-
   const isRemoteActive = (section === 'operation') && (document.querySelector('input[name="operation"]:checked')?.value === 'remote');
 
-  if (section === 'headfoot') {
-    theta = '0deg';
-    phi = '75deg';
-  } else if (section === 'siderails') {
-    theta = '60deg';
-    phi = '75deg';
-  } else if (section === 'wheel') {
-    theta = '45deg';
-    phi = '85deg';
-  } else if (section === 'operation') {
-    if (isRemoteActive) {
-      // Angle viewing the right side remote handset
-      theta = '120deg';
-      phi = '70deg';
-    } else {
-      theta = '45deg';
-      phi = '75deg';
-    }
-  } else if (section === 'cabinet' || section === 'drawer') {
-    theta = '45deg';
-    phi = '70deg';
-  }
-
-  // If remote is selected, calculate target box strictly around the remote handset meshes if available
-  let targetBox = box;
-  if (isRemoteActive) {
-    const remoteOnlyMeshes = matchingMeshes.filter(m => {
-      const mName = (m.name || '').toLowerCase();
-      const parentName = (m.parent?.name || '').toLowerCase();
-      return mName.includes('remote') || mName.includes('handset') || parentName.includes('remote') || parentName.includes('handset');
-    });
-    if (remoteOnlyMeshes.length > 0) {
-      const rBox = new THREE.Box3();
-      remoteOnlyMeshes.forEach(m => rBox.expandByObject(m));
-      if (!rBox.isEmpty()) {
-        targetBox = rBox;
+  // Fallback if no remote/handset mesh specifically matched for remote operation
+  if (section === 'operation' && isRemoteActive && matchingMeshes.length === 0) {
+    Object.keys(meshMap).forEach(key => {
+      const entry = meshMap[key];
+      if (!entry.visible) return;
+      const entryMatNames = entry.meshes ? entry.meshes.map(m => Array.isArray(m.material) ? m.material.map(mat => mat ? (mat.name || '') : '').join(' ') : (m.material ? (m.material.name || '') : '')).join(' ') : '';
+      const name = (entry.name + ' ' + entryMatNames).toLowerCase();
+      if (name.includes('motor') || name.includes('actuator') || name.includes('linear') || name.includes('control_box')) {
+        matchingMeshes.push(...entry.meshes);
       }
-    }
-  }
-
-  const targetCentre = targetBox.getCenter(new THREE.Vector3());
-  const targetSize = targetBox.getSize(new THREE.Vector3());
-
-  const maxSz = Math.max(targetSize.x, targetSize.y, targetSize.z);
-  if (isFinite(maxSz) && maxSz > 0) {
-    const isManualRemoteOp = (section === 'operation');
-    const prodLower = (productName || '').toLowerCase();
-    const isIcuFowlerLabor = prodLower.includes('icu') || prodLower.includes('fowler') || prodLower.includes('labor');
-
-    // Zoom camera in only during manual remote operations for ICU, Fowler, and Labor cots
-    if (isManualRemoteOp && isIcuFowlerLabor) {
-      const zoomRadius = isRemoteActive ? Math.max(maxSz * 2.5, 0.6) : maxSz * 2.0;
-      modelViewer.fieldOfView = 'auto';
-      modelViewer.cameraTarget = `${targetCentre.x}m ${targetCentre.y}m ${targetCentre.z}m`;
-      modelViewer.cameraOrbit = `${theta} ${phi} ${zoomRadius}m`;
-
-      // Reset camera back to normal initial position after 2.5 seconds
-      resetCameraTimeout = setTimeout(() => {
-        resetCameraToNormal();
-      }, 2500);
-
-      // Restore auto-rotation after 4 seconds if enabled
-      autoRotateTimeout = setTimeout(() => {
-        if (isAutoRotateActive && cb && cb.checked) {
-          modelViewer.autoRotate = true;
-        }
-      }, 4000);
-    } else {
-      if (isAutoRotateActive && cb && cb.checked) {
-        modelViewer.autoRotate = true;
-      }
-    }
-
-    // Always blink highlight meshes in this section for visual feedback
-    matchingMeshes.forEach(mesh => {
-      blinkMesh(mesh);
     });
   }
+
+  // Blink highlight matching section meshes
+  matchingMeshes.forEach(mesh => {
+    blinkMesh(mesh);
+  });
 }
 
 // == Stats ====================================================================
@@ -1504,6 +1412,10 @@ function applyCurrentConfig() {
         visible = (headfoot === 'abs' || headfoot === 'abs1' || headfoot === 'abs2');
       }
     }
+     if (isFowlerCotModel) {
+      if (name.includes('bush_siderail') || name.includes('logo_back')) {
+        visible = (headfoot === 'ms' || headfoot === 'ss');
+      }}
 
     // Deluxe Examination Couch storage (cupboard, drawers & footer) textured vs color mesh toggle logic
     if (isCouch) {
