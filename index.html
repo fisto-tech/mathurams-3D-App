@@ -1022,10 +1022,7 @@
 
     <!-- Homescreen Selector -->
     <main id="homescreen">
-      <div class="homescreen-hero">
-        <h1>Sri Mathurams Medical Engineering</h1>
-        <p>Select a product model to begin customisation or 3D viewing</p>
-      </div>
+      
 
       <div class="product-grid-section">
         <h2 class="section-heading">Customisation Models</h2>
@@ -1159,7 +1156,19 @@
 
   });
 </script>
-
+<script>
+  function checkHash() {
+    document.body.classList.toggle(
+      "has-hash",
+      window.location.hash.length > 0
+    );
+  }
+ 
+  checkHash();
+  window.addEventListener("hashchange", checkHash);
+</script>
+ 
+ 
  
 </body>
 
